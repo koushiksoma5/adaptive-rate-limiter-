@@ -1,16 +1,15 @@
-const config = {
-    redis: {
-        host: process.env.REDIS_HOST || 'localhost',
-        port: process.env.REDIS_PORT || 6379,
-    },
+module.exports = {
     rateLimit: {
-        windowMs: 60000, // 1 minute
-        maxRequests: 100, // max requests per window
-        adaptiveFactorWeight: 0.3, // weight for adaptive threshold adjustment
-        anomalyThreshold: 2.0, // standard deviations for anomaly detection
+        windowMs: 60000,
+        maxRequests: 100,
+        minThreshold: 50,
+        maxThreshold: 200
     },
-    server: {
-        port: process.env.PORT || 3000,
-    }
+    targetWebsites: [{
+        url: 'https://jsonplaceholder.typicode.com/posts/1',
+        monitorPath: '/',
+        alertThreshold: 200,
+        minAlertCount: 3,
+        cooldownPeriod: 300000 // 5 minutes in milliseconds
+    }]
 };
-module.exports = config;

@@ -3,7 +3,7 @@ const config = require('../config/config');
 const PerformanceMonitor = require('../utils/PerformanceMonitor');
 
 async function adaptiveRateLimiter(request, reply) {
-    const ip = request.ip;
+    const ip = request.ip || request.headers['x-forwarded-for'] || request.socket.remoteAddress;
     const key = `ratelimit:${ip}`;
     const now = Date.now();
     const windowMs = config.rateLimit.windowMs;
@@ -22,6 +22,8 @@ async function adaptiveRateLimiter(request, reply) {
 
         if (metrics && metrics.duration > 100) {
             await RedisService.adjustThreshold(key, false);
+        } else if (metrics && metrics.duration < 50) {
+            await RedisService.adjustThreshold(key, true);
         }
 
     } catch (error) {

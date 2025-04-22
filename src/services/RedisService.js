@@ -7,6 +7,66 @@ class RedisService {
             host: 'localhost',
             port: 6379
         });
+
+        this.redis.on('connect', () => {
+            console.log('Redis connected');
+        });
+
+        this.redis.on('error', (err) => {
+            console.error('Redis error:', err);
+        });
+    }
+
+    async getRequestLogs(limit = 100) {
+        const keys = await this.redis.keys('request:*');
+        const logs = [];
+
+        for (const key of keys.slice(-limit)) {
+            const log = await this.redis.hgetall(key);
+            if (log) {
+                logs.push(log);
+            }
+        }
+
+        return logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    }
+
+    async getRequestStats() {
+        const logs = await this.getRequestLogs();
+        const stats = {
+            totalRequests: logs.length,
+            averageResponseTime: 0,
+            statusCodes: {},
+            methodCounts: {},
+            recentRequests: logs.slice(0, 10)
+        };
+
+        let totalResponseTime = 0;
+        let responseCount = 0;
+
+        logs.forEach(log => {
+            // Count status codes
+            if (log.statusCode) {
+                stats.statusCodes[log.statusCode] = (stats.statusCodes[log.statusCode] || 0) + 1;
+            }
+
+            // Count HTTP methods
+            if (log.method) {
+                stats.methodCounts[log.method] = (stats.methodCounts[log.method] || 0) + 1;
+            }
+
+            // Calculate average response time
+            if (log.responseTime) {
+                totalResponseTime += parseFloat(log.responseTime);
+                responseCount++;
+            }
+        });
+
+        if (responseCount > 0) {
+            stats.averageResponseTime = (totalResponseTime / responseCount).toFixed(2);
+        }
+
+        return stats;
     }
 
     async checkRateLimit(key, now, windowMs) {
@@ -39,6 +99,53 @@ class RedisService {
         const thresholdKey = `threshold:${key}`;
         const threshold = await this.redis.get(thresholdKey);
         return threshold ? parseInt(threshold) : null;
+    }
+
+    async trackWebsiteMetrics(metrics) {
+        const key = `website:${metrics.url}:${Math.floor(metrics.timestamp / 60000)}`;
+        await this.redis.multi()
+            .hincrby(key, 'requests', 1)
+            .hset(key, 'lastResponseTime', metrics.responseTime)
+            .hset(key, 'lastStatusCode', metrics.statusCode)
+            .expire(key, 3600) // Keep data for 1 hour
+            .exec();
+    }
+
+    async getWebsiteMetrics(url) {
+        const now = Math.floor(Date.now() / 60000);
+        const key = `website:${url}:${now}`;
+        const data = await this.redis.hgetall(key);
+        return {
+            url,
+            requestsPerMinute: parseInt(data.requests) || 0,
+            lastResponseTime: parseInt(data.lastResponseTime) || 0,
+            lastStatusCode: parseInt(data.lastStatusCode) || 0
+        };
+    }
+
+    async getAllWebsiteMetrics() {
+        const metrics = [];
+        for (const site of config.targetWebsites) {
+            const siteMetrics = await this.getWebsiteMetrics(site.url);
+            metrics.push(siteMetrics);
+        }
+        return metrics;
+    }
+
+    // New method to clean up old request logs older than a specified age (default 1 hour)
+    async cleanupOldRequestLogs(maxAgeMs = 3600000) {
+        const keys = await this.redis.keys('request:*');
+        const now = Date.now();
+
+        for (const key of keys) {
+            const log = await this.redis.hgetall(key);
+            if (log && log.timestamp) {
+                const logTime = new Date(log.timestamp).getTime();
+                if (now - logTime > maxAgeMs) {
+                    await this.redis.del(key);
+                }
+            }
+        }
     }
 }
 
