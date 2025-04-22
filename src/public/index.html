@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Request Monitor Test Interface</title>
+    <script src="test-requests.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .card {
+            border: 1px solid #ddd;
+            padding: 20px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        
+        .button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 15px 32px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        
+        .button.slow {
+            background-color: #f44336;
+        }
+        
+        #results {
+            margin-top: 20px;
+        }
+        
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        
+        .success {
+            background-color: #dff0d8;
+            color: #3c763d;
+        }
+        
+        .error {
+            background-color: #f2dede;
+            color: #a94442;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Website Monitor Test Interface</h1>
+
+    <div class="card">
+        <h2>Test Endpoints</h2>
+        <button class="button" onclick="sendNormalRequest()">Quick Request</button>
+        <button class="button slow" onclick="sendSlowRequest()">Slow Request</button>
+        <button class="button" onclick="checkStatus()">Check Status</button>
+        <button class="button" onclick="burstRequests()">Burst Test (10 requests)</button>
+    </div>
+
+    <div class="card">
+        <h2>Authentication Test</h2>
+        <button class="button" onclick="login(true)">Valid Login</button>
+        <button class="button slow" onclick="login(false)">Invalid Login</button>
+    </div>
+
+    <div id="results"></div>
+
+    <script>
+        async function sendNormalRequest() {
+            try {
+                const startTime = Date.now();
+                const response = await fetch('/api/data');
+                const endTime = Date.now();
+                const data = await response.json();
+                showResult(`Quick request completed in ${endTime - startTime}ms: ${JSON.stringify(data)}`, 'success');
+            } catch (error) {
+                showResult(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function sendSlowRequest() {
+            try {
+                const startTime = Date.now();
+                const response = await fetch('/api/slow');
+                const endTime = Date.now();
+                const data = await response.json();
+                showResult(`Slow request completed in ${endTime - startTime}ms: ${JSON.stringify(data)}`, 'success');
+            } catch (error) {
+                showResult(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function checkStatus() {
+            try {
+                const startTime = Date.now();
+                const response = await fetch('/monitoring/status');
+                const endTime = Date.now();
+                const data = await response.json();
+                showResult(`Status check completed in ${endTime - startTime}ms: ${JSON.stringify(data, null, 2)}`, 'success');
+            } catch (error) {
+                showResult(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function login(valid) {
+            const credentials = valid ? {
+                username: 'admin',
+                password: 'password'
+            } : {
+                username: 'wrong',
+                password: 'wrong'
+            };
+
+            try {
+                const startTime = Date.now();
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(credentials)
+                });
+                const endTime = Date.now();
+                const data = await response.json();
+                showResult(`Login attempt completed in ${endTime - startTime}ms: ${JSON.stringify(data)}`, response.ok ? 'success' : 'error');
+            } catch (error) {
+                showResult(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function burstRequests() {
+            const promises = [];
+            for (let i = 0; i < 10; i++) {
+                promises.push(sendNormalRequest());
+            }
+            await Promise.all(promises);
+        }
+
+        function showResult(message, type) {
+            const resultsDiv = document.getElementById('results');
+            const statusDiv = document.createElement('div');
+            statusDiv.className = `status ${type}`;
+            statusDiv.textContent = message;
+            resultsDiv.insertBefore(statusDiv, resultsDiv.firstChild);
+        }
+    </script>
+</body>
+
+</html>

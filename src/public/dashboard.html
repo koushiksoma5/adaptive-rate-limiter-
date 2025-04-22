@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Request Monitor Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/moment"></script>
+    <script>
+        // Removed WebSocket connection for Vercel deployment (no WebSocket support)
+        // Rely on polling only for dashboard updates
+
+        // Polling interval in milliseconds
+        const POLLING_INTERVAL = 5000;
+
+        async function fetchDashboardData() {
+            try {
+                const [statsResponse, monitoringResponse] = await Promise.all([
+                    fetch('/api/stats'),
+                    fetch('/api/monitoring/status')
+                ]);
+
+                const data = await statsResponse.json();
+                const monitoringData = await monitoringResponse.json();
+
+                updateDashboard(data, monitoringData);
+                clearError();
+            } catch (error) {
+                showError('Failed to fetch monitoring data. Please check server connection.');
+            }
+        }
+
+        function showError(message) {
+            const errorAlert = document.getElementById('errorAlert');
+            errorAlert.style.display = 'block';
+            errorAlert.textContent = message;
+        }
+
+        function clearError() {
+            const errorAlert = document.getElementById('errorAlert');
+            errorAlert.style.display = 'none';
+            errorAlert.textContent = '';
+        }
+
+        // Initial fetch and set interval for polling
+        fetchDashboardData();
+        setInterval(fetchDashboardData, POLLING_INTERVAL);
+
+        function updateDashboard(data, monitoringData) {
+            // Update stats
+            document.getElementById('totalRequests').textContent = data.totalRequests || 0;
+            document.getElementById('avgResponseTime').textContent = `${data.averageResponseTime || 0}ms`;
+
+            // Calculate error rate
+            const errorRequests = Object.entries(data.statusCodes || {})
+                .filter(([code]) => code >= 400)
+                .reduce((sum, [, count]) => sum + count, 0);
+            const errorRate = ((errorRequests / (data.totalRequests || 1)) * 100).toFixed(1);
+            document.getElementById('errorRate').textContent = `${errorRate}%`;
+
+            // Update charts
+            const now = new Date();
+            const timestamp = now.toLocaleTimeString();
+
+            // Request Rate Chart
+            if (!window.requestHistory) window.requestHistory = [];
+            window.requestHistory.push({
+                timestamp,
+                count: data.recentRequests.length || 0
+            });
+            if (window.requestHistory.length > 20) window.requestHistory.shift();
+
+            requestRateChart.data.labels = window.requestHistory.map(entry => entry.timestamp);
+            requestRateChart.data.datasets[0].data = window.requestHistory.map(entry => entry.count);
+            requestRateChart.update();
+
+            // Response Time Chart
+            const timestamps = (data.recentRequests || []).map(req => new Date(req.timestamp).toLocaleTimeString());
+            responseTimeChart.data.labels = timestamps;
+            responseTimeChart.data.datasets[0].data = (data.recentRequests || []).map(req => req.responseTime);
+            responseTimeChart.update();
+
+            // Status Codes Chart
+            const statusCodes = data.statusCodes || {};
+            statusCodesChart.data.labels = Object.keys(statusCodes);
+            statusCodesChart.data.datasets[0].data = Object.values(statusCodes);
+            statusCodesChart.update();
+
+            // Show alerts for high response times or errors
+            const highResponseTimeThreshold = 1000; // 1 second
+            const errorAlert = document.getElementById('errorAlert');
+
+            const hasHighResponseTime = (data.recentRequests || []).some(req => req.responseTime > highResponseTimeThreshold);
+            const hasErrors = Object.keys(statusCodes).some(code => parseInt(code) >= 400);
+
+            if (hasHighResponseTime || hasErrors) {
+                errorAlert.style.display = 'block';
+                errorAlert.textContent = `Warning: ${hasHighResponseTime ? 'High response times detected. ' : ''}${hasErrors ? 'Error responses detected.' : ''}`;
+            } else {
+                errorAlert.style.display = 'none';
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+            transition: transform 0.2s;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        
+        .alert {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            display: none;
+        }
+    </style>
+    </style>
+</head>
+
+<body>
+    <h1>Request Monitor Dashboard</h1>
+
+    <div class="alert" id="errorAlert"></div>
+
+    <div class="stats">
+        <div class="stat-card">
+            <div class="stat-value" id="totalRequests">0</div>
+            <div class="stat-label">Total Requests</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="avgResponseTime">0ms</div>
+            <div class="stat-label">Avg Response Time</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="errorRate">0%</div>
+            <div class="stat-label">Error Rate</div>
+        </div>
+    </div>
+
+    <div class="dashboard-grid">
+        <div class="card">
+            <h2>Request Rate</h2>
+            <div class="chart-container">
+                <canvas id="requestRateChart"></canvas>
+            </div>
+        </div>
+        <div class="card">
+            <h2>Response Times</h2>
+            <div class="chart-container">
+                <canvas id="responseTimeChart"></canvas>
+            </div>
+        </div>
+        <div class="card">
+            <h2>Status Codes</h2>
+            <div class="chart-container">
+                <canvas id="statusCodesChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function updateDashboard(data) {
+            // Update stats
+            document.getElementById('totalRequests').textContent = data.requests;
+            document.getElementById('avgResponseTime').textContent = `${Math.round(data.averageResponseTime)}ms`;
+            document.getElementById('errorRate').textContent = `${100 - data.successRate}%`;
+
+            // Update charts
+            const timestamp = moment().format('HH:mm:ss');
+
+            requestRateChart.data.labels.push(timestamp);
+            requestRateChart.data.datasets[0].data.push(data.lastMinuteRequests);
+            if (requestRateChart.data.labels.length > 20) {
+                requestRateChart.data.labels.shift();
+                requestRateChart.data.datasets[0].data.shift();
+            }
+            requestRateChart.update();
+
+            if (data.currentRequest) {
+                responseTimeChart.data.labels.push(timestamp);
+                responseTimeChart.data.datasets[0].data.push(data.currentRequest.responseTime);
+                if (responseTimeChart.data.labels.length > 20) {
+                    responseTimeChart.data.labels.shift();
+                    responseTimeChart.data.datasets[0].data.shift();
+                }
+                responseTimeChart.update();
+            }
+        }
+
+        // Initialize charts
+        const requestRateChart = new Chart(document.getElementById('requestRateChart'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Requests per Minute',
+                    data: [],
+                    borderColor: '#3498db',
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        });
+
+        const responseTimeChart = new Chart(document.getElementById('responseTimeChart'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Response Time (ms)',
+                    data: [],
+                    borderColor: '#2ecc71',
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        });
+
+        const statusCodesChart = new Chart(document.getElementById('statusCodesChart'), {
+            type: 'doughnut',
+            data: {
+                labels: [],
+                datasets: [{
+                    data: [],
+                    backgroundColor: [
+                        '#2ecc71',
+                        '#e74c3c',
+                        '#f1c40f',
+                        '#95a5a6'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        });
+
+        let requestHistory = [];
+        const MAX_HISTORY = 50;
+
+        // Update dashboard data
+        async function updateDashboard() {
+            try {
+                const [statsResponse, monitoringResponse] = await Promise.all([
+                    fetch('/api/stats'),
+                    fetch('/api/monitoring/status')
+                ]);
+
+                const data = await statsResponse.json();
+                const monitoringData = await monitoringResponse.json();
+
+                // Update stats
+                document.getElementById('totalRequests').textContent = data.totalRequests || 0;
+                document.getElementById('avgResponseTime').textContent = `${data.averageResponseTime || 0}ms`;
+
+                // Calculate error rate
+                const errorRequests = Object.entries(data.statusCodes || {})
+                    .filter(([code]) => code >= 400)
+                    .reduce((sum, [, count]) => sum + count, 0);
+                const errorRate = ((errorRequests / (data.totalRequests || 1)) * 100).toFixed(1);
+                document.getElementById('errorRate').textContent = `${errorRate}%`;
+
+                // Update request history
+                const now = moment();
+                requestHistory.push({
+                    timestamp: now,
+                    count: (data.recentRequests || []).length
+                });
+
+                if (requestHistory.length > MAX_HISTORY) {
+                    requestHistory.shift();
+                }
+
+                // Update request rate chart
+                requestRateChart.data.labels = requestHistory.map(entry => entry.timestamp.format('HH:mm:ss'));
+                requestRateChart.data.datasets[0].data = requestHistory.map(entry => entry.count);
+                requestRateChart.update();
+
+                // Update response time chart
+                const timestamps = (data.recentRequests || []).map(req => moment(req.timestamp).format('HH:mm:ss'));
+                responseTimeChart.data.labels = timestamps;
+                responseTimeChart.data.datasets[0].data = (data.recentRequests || []).map(req => req.responseTime);
+                responseTimeChart.update();
+
+                // Update status codes chart
+                const statusCodes = data.statusCodes || {};
+                statusCodesChart.data.labels = Object.keys(statusCodes);
+                statusCodesChart.data.datasets[0].data = Object.values(statusCodes);
+                statusCodesChart.update();
+
+                // Show alerts for high response times or errors
+                const highResponseTimeThreshold = 1000; // 1 second
+                const errorAlert = document.getElementById('errorAlert');
+
+                const hasHighResponseTime = (data.recentRequests || []).some(req => req.responseTime > highResponseTimeThreshold);
+                const hasErrors = Object.keys(statusCodes).some(code => parseInt(code) >= 400);
+
+                if (hasHighResponseTime || hasErrors) {
+                    errorAlert.style.display = 'block';
+                    errorAlert.textContent = `Warning: ${hasHighResponseTime ? 'High response times detected. ' : ''}${hasErrors ? 'Error responses detected.' : ''}`;
+                } else {
+                    errorAlert.style.display = 'none';
+                }
+
+            } catch (error) {
+                console.error('Failed to update dashboard:', error);
+                document.getElementById('errorAlert').style.display = 'block';
+                document.getElementById('errorAlert').textContent = 'Failed to fetch monitoring data. Please check server connection.';
+            }
+        }
+
+
+
+        // Update dashboard every 5 seconds
+        updateDashboard();
+        setInterval(updateDashboard, 5000);
+    </script>
+</body>
+
+</html>
