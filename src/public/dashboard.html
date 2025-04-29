@@ -2,106 +2,11 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Request Monitor Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/moment"></script>
-    <script>
-        // Removed WebSocket connection for Vercel deployment (no WebSocket support)
-        // Rely on polling only for dashboard updates
-
-        // Polling interval in milliseconds
-        const POLLING_INTERVAL = 5000;
-
-        async function fetchDashboardData() {
-            try {
-                const [statsResponse, monitoringResponse] = await Promise.all([
-                    fetch('/api/stats'),
-                    fetch('/api/monitoring/status')
-                ]);
-
-                const data = await statsResponse.json();
-                const monitoringData = await monitoringResponse.json();
-
-                updateDashboard(data, monitoringData);
-                clearError();
-            } catch (error) {
-                showError('Failed to fetch monitoring data. Please check server connection.');
-            }
-        }
-
-        function showError(message) {
-            const errorAlert = document.getElementById('errorAlert');
-            errorAlert.style.display = 'block';
-            errorAlert.textContent = message;
-        }
-
-        function clearError() {
-            const errorAlert = document.getElementById('errorAlert');
-            errorAlert.style.display = 'none';
-            errorAlert.textContent = '';
-        }
-
-        // Initial fetch and set interval for polling
-        fetchDashboardData();
-        setInterval(fetchDashboardData, POLLING_INTERVAL);
-
-        function updateDashboard(data, monitoringData) {
-            // Update stats
-            document.getElementById('totalRequests').textContent = data.totalRequests || 0;
-            document.getElementById('avgResponseTime').textContent = `${data.averageResponseTime || 0}ms`;
-
-            // Calculate error rate
-            const errorRequests = Object.entries(data.statusCodes || {})
-                .filter(([code]) => code >= 400)
-                .reduce((sum, [, count]) => sum + count, 0);
-            const errorRate = ((errorRequests / (data.totalRequests || 1)) * 100).toFixed(1);
-            document.getElementById('errorRate').textContent = `${errorRate}%`;
-
-            // Update charts
-            const now = new Date();
-            const timestamp = now.toLocaleTimeString();
-
-            // Request Rate Chart
-            if (!window.requestHistory) window.requestHistory = [];
-            window.requestHistory.push({
-                timestamp,
-                count: data.recentRequests.length || 0
-            });
-            if (window.requestHistory.length > 20) window.requestHistory.shift();
-
-            requestRateChart.data.labels = window.requestHistory.map(entry => entry.timestamp);
-            requestRateChart.data.datasets[0].data = window.requestHistory.map(entry => entry.count);
-            requestRateChart.update();
-
-            // Response Time Chart
-            const timestamps = (data.recentRequests || []).map(req => new Date(req.timestamp).toLocaleTimeString());
-            responseTimeChart.data.labels = timestamps;
-            responseTimeChart.data.datasets[0].data = (data.recentRequests || []).map(req => req.responseTime);
-            responseTimeChart.update();
-
-            // Status Codes Chart
-            const statusCodes = data.statusCodes || {};
-            statusCodesChart.data.labels = Object.keys(statusCodes);
-            statusCodesChart.data.datasets[0].data = Object.values(statusCodes);
-            statusCodesChart.update();
-
-            // Show alerts for high response times or errors
-            const highResponseTimeThreshold = 1000; // 1 second
-            const errorAlert = document.getElementById('errorAlert');
-
-            const hasHighResponseTime = (data.recentRequests || []).some(req => req.responseTime > highResponseTimeThreshold);
-            const hasErrors = Object.keys(statusCodes).some(code => parseInt(code) >= 400);
-
-            if (hasHighResponseTime || hasErrors) {
-                errorAlert.style.display = 'block';
-                errorAlert.textContent = `Warning: ${hasHighResponseTime ? 'High response times detected. ' : ''}${hasErrors ? 'Error responses detected.' : ''}`;
-            } else {
-                errorAlert.style.display = 'none';
-            }
-        }
-    </script>
+    <script src="https://cdn.jsdelivr.net/npm/moment/min/moment.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -170,7 +75,38 @@
             margin-bottom: 20px;
             display: none;
         }
-    </style>
+        
+        .button {
+            padding: 10px 15px;
+            margin-right: 10px;
+            border: none;
+            border-radius: 4px;
+            background-color: #3498db;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .button:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+        
+        .success {
+            color: green;
+        }
+        
+        .error {
+            color: red;
+        }
+        
+        #requestStatus {
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
     </style>
 </head>
 
@@ -178,6 +114,13 @@
     <h1>Request Monitor Dashboard</h1>
 
     <div class="alert" id="errorAlert"></div>
+
+    <div class="card" id="requestSimulationControls" style="margin-bottom: 20px;">
+        <h2>Request Simulation Controls</h2>
+        <button id="startSimulation" class="button">Start Simulation</button>
+        <button id="stopSimulation" class="button" style="background-color: #f44336;">Stop Simulation</button>
+        <div id="requestStatus"></div>
+    </div>
 
     <div class="stats">
         <div class="stat-card">
@@ -214,34 +157,45 @@
             </div>
         </div>
     </div>
+    <div class="card">
+        <h2>Blocked Requests</h2>
+        <div id="blockedRequestsList" style="max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 12px; background: #f8f9fa; padding: 10px; border-radius: 6px;"></div>
+    </div>
 
     <script>
-        function updateDashboard(data) {
-            // Update stats
-            document.getElementById('totalRequests').textContent = data.requests;
-            document.getElementById('avgResponseTime').textContent = `${Math.round(data.averageResponseTime)}ms`;
-            document.getElementById('errorRate').textContent = `${100 - data.successRate}%`;
+        // Removed WebSocket connection for Vercel deployment (no WebSocket support)
+        // Rely on polling only for dashboard updates
 
-            // Update charts
-            const timestamp = moment().format('HH:mm:ss');
+        // Polling interval in milliseconds
+        const POLLING_INTERVAL = 5000;
 
-            requestRateChart.data.labels.push(timestamp);
-            requestRateChart.data.datasets[0].data.push(data.lastMinuteRequests);
-            if (requestRateChart.data.labels.length > 20) {
-                requestRateChart.data.labels.shift();
-                requestRateChart.data.datasets[0].data.shift();
+        async function fetchDashboardData() {
+            try {
+                const [statsResponse, monitoringResponse] = await Promise.all([
+                    fetch('/api/stats'),
+                    fetch('/api/monitoring/status')
+                ]);
+
+                const data = await statsResponse.json();
+                const monitoringData = await monitoringResponse.json();
+
+                updateDashboard(data, monitoringData);
+                clearError();
+            } catch (error) {
+                showError('Failed to fetch monitoring data. Please check server connection.');
             }
-            requestRateChart.update();
+        }
 
-            if (data.currentRequest) {
-                responseTimeChart.data.labels.push(timestamp);
-                responseTimeChart.data.datasets[0].data.push(data.currentRequest.responseTime);
-                if (responseTimeChart.data.labels.length > 20) {
-                    responseTimeChart.data.labels.shift();
-                    responseTimeChart.data.datasets[0].data.shift();
-                }
-                responseTimeChart.update();
-            }
+        function showError(message) {
+            const errorAlert = document.getElementById('errorAlert');
+            errorAlert.style.display = 'block';
+            errorAlert.textContent = message;
+        }
+
+        function clearError() {
+            const errorAlert = document.getElementById('errorAlert');
+            errorAlert.style.display = 'none';
+            errorAlert.textContent = '';
         }
 
         // Initialize charts
@@ -285,12 +239,7 @@
                 labels: [],
                 datasets: [{
                     data: [],
-                    backgroundColor: [
-                        '#2ecc71',
-                        '#e74c3c',
-                        '#f1c40f',
-                        '#95a5a6'
-                    ]
+                    backgroundColor: ['#2ecc71', '#e74c3c', '#f1c40f', '#95a5a6']
                 }]
             },
             options: {
@@ -303,23 +252,15 @@
         const MAX_HISTORY = 50;
 
         // Update dashboard data
-        async function updateDashboard() {
+        async function updateDashboard(data, monitoringData) {
             try {
-                const [statsResponse, monitoringResponse] = await Promise.all([
-                    fetch('/api/stats'),
-                    fetch('/api/monitoring/status')
-                ]);
-
-                const data = await statsResponse.json();
-                const monitoringData = await monitoringResponse.json();
-
                 // Update stats
                 document.getElementById('totalRequests').textContent = data.totalRequests || 0;
-                document.getElementById('avgResponseTime').textContent = `${data.averageResponseTime || 0}ms`;
+                document.getElementById('avgResponseTime').textContent = `${Math.round(data.averageResponseTime) || 0}ms`;
 
                 // Calculate error rate
                 const errorRequests = Object.entries(data.statusCodes || {})
-                    .filter(([code]) => code >= 400)
+                    .filter(([code]) => parseInt(code) >= 400)
                     .reduce((sum, [, count]) => sum + count, 0);
                 const errorRate = ((errorRequests / (data.totalRequests || 1)) * 100).toFixed(1);
                 document.getElementById('errorRate').textContent = `${errorRate}%`;
@@ -330,7 +271,6 @@
                     timestamp: now,
                     count: (data.recentRequests || []).length
                 });
-
                 if (requestHistory.length > MAX_HISTORY) {
                     requestHistory.shift();
                 }
@@ -365,19 +305,161 @@
                 } else {
                     errorAlert.style.display = 'none';
                 }
-
             } catch (error) {
                 console.error('Failed to update dashboard:', error);
-                document.getElementById('errorAlert').style.display = 'block';
-                document.getElementById('errorAlert').textContent = 'Failed to fetch monitoring data. Please check server connection.';
+                showError('Failed to fetch monitoring data. Please check server connection.');
             }
         }
 
+        async function fetchBlockedRequests() {
+            try {
+                const response = await fetch('/api/requests/blocked');
+                if (!response.ok) throw new Error('Failed to fetch blocked requests');
+                const blockedRequests = await response.json();
+                updateBlockedRequests(blockedRequests);
+            } catch (error) {
+                console.error('Error fetching blocked requests:', error);
+            }
+        }
 
+        function updateBlockedRequests(blockedRequests) {
+            const container = document.getElementById('blockedRequestsList');
+            if (!blockedRequests || blockedRequests.length === 0) {
+                container.innerHTML = '<p>No blocked requests</p>';
+                return;
+            }
+            const items = blockedRequests.map(req => {
+                return `<div>
+                        <strong>IP:</strong> ${req.ip} <br/>
+                        <strong>Method:</strong> ${req.method} <br/>
+                        <strong>URL:</strong> ${req.url} <br/>
+                        <strong>Time:</strong> ${new Date(req.timestamp).toLocaleString()}
+                    </div><hr/>`;
+            });
+            container.innerHTML = items.join('');
+        }
 
-        // Update dashboard every 5 seconds
-        updateDashboard();
-        setInterval(updateDashboard, 5000);
+        // Extend existing updateDashboard function to also fetch blocked requests
+        const originalUpdateDashboard = updateDashboard;
+        updateDashboard = async function(data, monitoringData) {
+            await originalUpdateDashboard(data, monitoringData);
+            await fetchBlockedRequests();
+        };
+
+        // Request simulation script from test-requests.js
+
+        const makeRequest = async(endpoint, method = 'GET', payload = null) => {
+            try {
+                const options = {
+                    method,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                };
+
+                if (payload) {
+                    options.body = JSON.stringify(payload);
+                }
+
+                const startTime = performance.now();
+                const response = await fetch(endpoint, options);
+                const endTime = performance.now();
+                const responseTime = endTime - startTime;
+
+                const statusElement = document.getElementById('requestStatus');
+                const status = `${method} ${endpoint} - Status: ${response.status} - Time: ${responseTime.toFixed(2)}ms`;
+
+                statusElement.innerHTML = `<div class="${response.ok ? 'success' : 'error'}">${status}</div>` + statusElement.innerHTML;
+                if (statusElement.children.length > 10) {
+                    statusElement.removeChild(statusElement.lastChild);
+                }
+
+                return response;
+            } catch (error) {
+                console.error(`Error making request to ${endpoint}:`, error);
+                const statusElement = document.getElementById('requestStatus');
+                statusElement.innerHTML = `<div class="error">Error: ${error.message}</div>` + statusElement.innerHTML;
+            }
+        };
+
+        let normalInterval, burstInterval, errorInterval;
+
+        // Function to simulate different request patterns
+        const simulateRequests = async() => {
+            const endpoints = [
+                '/api/test',
+                '/api/users',
+                '/api/data',
+                '/api/status'
+            ];
+
+            const methods = ['GET', 'POST', 'PUT', 'DELETE'];
+
+            // Make a request every second
+            normalInterval = setInterval(async() => {
+                const endpoint = endpoints[Math.floor(Math.random() * endpoints.length)];
+                const method = methods[Math.floor(Math.random() * methods.length)];
+                const payload = method !== 'GET' ? {
+                    data: 'test-' + Date.now()
+                } : null;
+                await makeRequest(endpoint, method, payload);
+            }, 1000);
+
+            // Burst of requests every 10 seconds
+            burstInterval = setInterval(async() => {
+                console.log('Simulating burst of requests...');
+                for (let i = 0; i < 5; i++) {
+                    const endpoint = endpoints[Math.floor(Math.random() * endpoints.length)];
+                    await makeRequest(endpoint);
+                }
+            }, 10000);
+
+            // Simulate errors occasionally
+            errorInterval = setInterval(async() => {
+                const invalidEndpoint = '/api/nonexistent';
+                await makeRequest(invalidEndpoint);
+            }, 15000);
+        };
+
+        // Add controls to start/stop simulation
+        document.addEventListener('DOMContentLoaded', () => {
+            const controlsDiv = document.getElementById('requestSimulationControls');
+            const startButton = document.getElementById('startSimulation');
+            const stopButton = document.getElementById('stopSimulation');
+
+            let isSimulationRunning = false;
+
+            startButton.addEventListener('click', () => {
+                if (!isSimulationRunning) {
+                    simulateRequests();
+                    isSimulationRunning = true;
+                    startButton.disabled = true;
+                    stopButton.disabled = false;
+                }
+            });
+
+            stopButton.addEventListener('click', () => {
+                if (isSimulationRunning) {
+                    clearInterval(normalInterval);
+                    clearInterval(burstInterval);
+                    clearInterval(errorInterval);
+                    isSimulationRunning = false;
+                    startButton.disabled = false;
+                    stopButton.disabled = true;
+                    console.log('Simulation stopped');
+                }
+            });
+
+            // Initially disable stop button
+            stopButton.disabled = true;
+        });
+
+        // Initial fetch and set interval for polling
+        fetchDashboardData();
+        setInterval(fetchDashboardData, POLLING_INTERVAL);
+
+        fetchBlockedRequests();
+        setInterval(fetchBlockedRequests, POLLING_INTERVAL);
     </script>
 </body>
 

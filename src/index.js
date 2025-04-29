@@ -1,6 +1,7 @@
 const fastify = require('fastify');
 const path = require('path');
 const http = require('http');
+const { exec } = require('child_process');
 const WebsiteMonitor = require('./services/WebsiteMonitor');
 const RedisService = require('./services/RedisService');
 const websiteMonitor = new WebsiteMonitor(); // Create an instance
@@ -11,7 +12,9 @@ const statsRoutes = require('./routes/stats');
 const { getRequestStats } = require('./routes/stats');
 
 const app = fastify({
-    logger: true
+    logger: {
+        level: 'warn'
+    }
 });
 
 // Register JSON body parser
@@ -106,8 +109,17 @@ app.post('/login', async(request, reply) => {
 const start = async() => {
     try {
         await app.register(require('@fastify/cors'));
-        await app.listen({ port: 3000, host: '0.0.0.0' });
-        console.log('Server running on http://localhost:3000');
+        const port = process.env.PORT || 5000;
+        await app.listen({ port: port, host: '0.0.0.0' });
+        setTimeout(() => {
+            exec(`start http://localhost:${port}/test-requests`);
+        }, 1000);
+        setTimeout(() => {
+            exec(`start http://localhost:${port}/dashboard.html`);
+        }, 2000);
+        console.log(`Server running on http://localhost:${port}`);
+        // Open the default browser automatically on Windows
+        exec(`start http://localhost:${port}`);
     } catch (err) {
         console.error('Failed to start server:', err);
         process.exit(1);

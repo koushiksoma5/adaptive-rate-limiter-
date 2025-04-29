@@ -15,7 +15,7 @@ function requestLogger(request, reply, done) {
 
     // Store request info in Redis with a unique key
     const requestKey = `request:${requestId}`;
-    RedisService.redis.hmset(requestKey, {
+    RedisService.redis.hset(requestKey, {
         ...requestInfo,
         status: 'pending'
     }).then(() => {
@@ -28,7 +28,7 @@ function requestLogger(request, reply, done) {
         const diff = process.hrtime(startTime);
         const responseTime = (diff[0] * 1e3 + diff[1] * 1e-6).toFixed(2);
 
-        RedisService.redis.hmset(requestKey, {
+        RedisService.redis.hset(requestKey, {
             statusCode: reply.statusCode,
             status: 'completed'
         }).catch(err => {

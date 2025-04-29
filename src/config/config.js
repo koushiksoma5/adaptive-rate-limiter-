@@ -6,8 +6,8 @@ module.exports = {
         maxThreshold: 200
     },
     targetWebsites: [{
-        url: 'https://jsonplaceholder.typicode.com/posts/1',
-        monitorPath: '/',
+        url: 'https://zerowastex.vercel.app',
+        monitorPath: '/home',
         alertThreshold: 200,
         minAlertCount: 3,
         cooldownPeriod: 300000 // 5 minutes in milliseconds
