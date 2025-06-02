@@ -127,7 +127,7 @@ class RedisService {
 
     async trackWebsiteMetrics(metrics) {
         try {
-            const key = `website:${metrics.url}:${Math.floor(metrics.timestamp / 60000)}`;
+            const key = `website:${metrics.url}:${Math.floor(metrics.timestamp / 1000)}`; // Changed to per second granularity
             await this.redis.multi()
                 .hincrby(key, 'requests', 1)
                 .hset(key, 'lastResponseTime', metrics.responseTime)

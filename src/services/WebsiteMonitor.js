@@ -95,7 +95,7 @@ class WebsiteMonitor {
                 console.error(`Error monitoring ${site.url}:`, error.message);
                 await this.handleAlert(site, null, error);
             }
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Changed monitoring interval to 1 second
         }
     }
 

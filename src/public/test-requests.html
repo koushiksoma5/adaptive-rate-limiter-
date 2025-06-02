@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Request Monitor Test Interface</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        
+        .button {
+            padding: 10px 15px;
+            margin-right: 10px;
+            border: none;
+            border-radius: 4px;
+            background-color: #3498db;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .button:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+        
+        #requestStatus {
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        
+        #currentRequestCount {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Request Monitor Test Interface</h1>
+    <div id="currentRequestCount">Current Requests: 0</div>
+    <div class="card" id="requestSimulationControls">
+        <h2>Request Simulation Controls</h2>
+        <button id="startSimulation" class="button">Start Simulation</button>
+        <button id="stopSimulation" class="button" style="background-color: #f44336;">Stop Simulation</button>
+        <div id="requestStatus"></div>
+    </div>
+    <script src="test-requests.js"></script>
+    <script>
+        async function fetchCurrentRequestCount() {
+            try {
+                const response = await fetch('/api/stats');
+                if (!response.ok) throw new Error('Failed to fetch stats');
+                const data = await response.json();
+                const count = data.totalRequests || 0;
+                document.getElementById('currentRequestCount').textContent = 'Current Requests: ' + count;
+            } catch (error) {
+                console.error('Error fetching current request count:', error);
+            }
+        }
+
+        // Fetch current request count every 2 seconds
+        setInterval(fetchCurrentRequestCount, 2000);
+
+        // Initial fetch
+        fetchCurrentRequestCount();
+    </script>
+</body>
+
+</html>

@@ -9,7 +9,7 @@ const config = require('./config/config');
 const adaptiveRateLimiter = require('./middleware/adaptiveRateLimiter');
 const requestLogger = require('./middleware/requestLogger');
 const statsRoutes = require('./routes/stats');
-const { getRequestStats } = require('./routes/stats');
+const dashboardStatsRoutes = require('./routes/dashboardStats');
 
 const app = fastify({
     logger: {
@@ -38,17 +38,10 @@ app.addHook('onRequest', requestLogger);
 
 // Register stats routes
 app.register(statsRoutes);
+app.register(dashboardStatsRoutes);
 
-// Start monitoring target websites
-websiteMonitor.startMonitoring(config.targetWebsites); // API endpoint to get stats
-app.get('/api/stats', async(request, reply) => {
-    try {
-        const stats = await getRequestStats();
-        reply.send(stats);
-    } catch (error) {
-        reply.code(500).send({ error: 'Failed to fetch stats' });
-    }
-});
+// Start monitoring target websit
+websiteMonitor.startMonitoring(config.targetWebsites);
 
 // API endpoint to get monitoring status
 app.get('/api/monitoring/status', async(request, reply) => {
@@ -111,12 +104,7 @@ const start = async() => {
         await app.register(require('@fastify/cors'));
         const port = process.env.PORT || 5000;
         await app.listen({ port: port, host: '0.0.0.0' });
-        setTimeout(() => {
-            exec(`start http://localhost:${port}/test-requests`);
-        }, 1000);
-        setTimeout(() => {
-            exec(`start http://localhost:${port}/dashboard.html`);
-        }, 2000);
+        // Removed auto-opening of test-requests and dashboard pages
         console.log(`Server running on http://localhost:${port}`);
         // Open the default browser automatically on Windows
         exec(`start http://localhost:${port}`);
